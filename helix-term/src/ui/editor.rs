@@ -592,6 +592,73 @@ impl EditorView {
     }
 
     /// Render bufferline at the top
+    //pub fn render_bufferline(editor: &Editor, viewport: Rect, surface: &mut Surface) {
+    //    let scratch = PathBuf::from(SCRATCH_BUFFER_NAME); // default filename to use for scratch buffer
+    //    surface.clear_with(
+    //        viewport,
+    //        editor
+    //            .theme
+    //            .try_get("ui.bufferline.background")
+    //            .unwrap_or_else(|| editor.theme.get("ui.statusline")),
+    //    );
+
+    //    let bufferline_active = editor
+    //        .theme
+    //        .try_get("ui.bufferline.active")
+    //        .unwrap_or_else(|| editor.theme.get("ui.statusline.active"));
+
+    //    let bufferline_inactive = editor
+    //        .theme
+    //        .try_get("ui.bufferline")
+    //        .unwrap_or_else(|| editor.theme.get("ui.statusline.inactive"));
+
+    //    let mut x = viewport.x;
+    //    let current_doc = view!(editor).doc;
+
+    //    for doc in editor.documents() {
+    //        let fname = doc
+    //            .path()
+    //            .unwrap_or(&scratch)
+    //            .file_name()
+    //            .unwrap_or_default()
+    //            .to_str()
+    //            .unwrap_or_default();
+
+    //        for ref_doc in editor.documents() {
+    //            let ref_file = ref_doc.path();
+
+    //            if let Some(file) = ref_file {
+    //                let ref_name = file.file_name().and_then(|s| s.to_str());
+
+    //                if let Some(name) = ref_name {
+    //                    if fname == name {
+    //                        file.capacity()
+    //                    }
+    //                }
+    //            }
+    //        }
+
+    //        let style = if current_doc == doc.id() {
+    //            bufferline_active
+    //        } else {
+    //            bufferline_inactive
+    //        };
+
+    //        let text = format!(" {}{} ", fname, if doc.is_modified() { "[+]" } else { "" });
+    //        let used_width = viewport.x.saturating_sub(x);
+    //        let rem_width = surface.area.width.saturating_sub(used_width);
+
+    //        x = surface
+    //            .set_stringn(x, viewport.y, text, rem_width as usize, style)
+    //            .0;
+
+    //        if x >= surface.area.right() {
+    //            break;
+    //        }
+    //    }
+    //}
+
+    /// Render bufferline at the top
     pub fn render_bufferline(editor: &Editor, viewport: Rect, surface: &mut Surface) {
         let scratch = PathBuf::from(SCRATCH_BUFFER_NAME); // default filename to use for scratch buffer
         surface.clear_with(
@@ -615,14 +682,85 @@ impl EditorView {
         let mut x = viewport.x;
         let current_doc = view!(editor).doc;
 
+        // Collect all documents
+        let docs: Vec<_> = editor.documents().collect();
+
+        // Step 1: Generate candidate display names for each document
+        let mut candidate_counts = std::collections::HashMap::new();
+        for doc in &docs {
+            let path = doc.path().unwrap_or(&scratch);
+            let candidates = Self::generate_candidates(path);
+            for candidate in candidates {
+                *candidate_counts.entry(candidate).or_insert(0) += 1;
+            }
+        }
+
+        // Step 2: Assign the shortest unique candidate to each document
+        let mut display_names = std::collections::HashMap::new();
+        for doc in &docs {
+            let path = doc.path().unwrap_or(&scratch);
+            let candidates = Self::generate_candidates(path);
+            let selected = candidates
+                .iter()
+                .find(|c| candidate_counts.get(*c) == Some(&1))
+                .unwrap_or_else(|| candidates.last().unwrap());
+            display_names.insert(doc.id(), selected.clone());
+        }
+
+        // Step 3: Group documents by their display name to handle duplicates
+        let mut display_name_groups = std::collections::HashMap::new();
+        for doc in &docs {
+            let name = display_names.get(&doc.id()).unwrap().clone();
+            display_name_groups
+                .entry(name)
+                .or_insert(Vec::new())
+                .push(doc);
+        }
+
+        // Step 4: Resolve remaining duplicates (same path) by appending numbers
+        let mut final_names = std::collections::HashMap::new();
+        for (name, group) in display_name_groups {
+            if group.len() == 1 {
+                final_names.insert(group[0].id(), name);
+            } else {
+                // Check if all documents in the group have the same path
+                let first_path = group[0].path().unwrap_or(&scratch);
+                let all_same = group.iter().all(|d| {
+                    let path = d.path().unwrap_or(&scratch);
+                    path == first_path
+                });
+
+                if all_same {
+                    for (idx, doc) in group.into_iter().enumerate() {
+                        let new_name = if idx == 0 {
+                            name.clone()
+                        } else {
+                            format!("{} ({})", name, idx + 1)
+                        };
+                        final_names.insert(doc.id(), new_name);
+                    }
+                } else {
+                    // Fallback: append numbers even if paths differ (unlikely due to step 2)
+                    for (idx, doc) in group.into_iter().enumerate() {
+                        let new_name = format!("{} ({})", name, idx + 1);
+                        final_names.insert(doc.id(), new_name);
+                    }
+                }
+            }
+        }
+
+        // Render each document's tab
         for doc in editor.documents() {
-            let fname = doc
-                .path()
-                .unwrap_or(&scratch)
-                .file_name()
-                .unwrap_or_default()
-                .to_str()
-                .unwrap_or_default();
+            let fname = final_names.get(&doc.id()).cloned().unwrap_or_else(|| {
+                // Fallback in case of unexpected error
+                doc.path()
+                    .unwrap_or(&scratch)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or_default()
+                    .to_string()
+            });
 
             let style = if current_doc == doc.id() {
                 bufferline_active
@@ -642,6 +780,32 @@ impl EditorView {
                 break;
             }
         }
+    }
+
+    /// Generates display candidates for a path, from filename to full path.
+    fn generate_candidates(path: &PathBuf) -> Vec<String> {
+        let mut candidates = Vec::new();
+        let mut components: Vec<_> = path.iter().collect();
+
+        if components.is_empty() {
+            return candidates;
+        }
+
+        // Start with the filename and add parent directories incrementally
+        let mut current = components
+            .pop()
+            .and_then(|c| c.to_str())
+            .unwrap_or("")
+            .to_string();
+        candidates.push(current.clone());
+
+        while let Some(comp) = components.pop() {
+            let comp_str = comp.to_str().unwrap_or("");
+            current = format!("{}/{}", comp_str, current);
+            candidates.push(current.clone());
+        }
+
+        candidates
     }
 
     pub fn render_gutter<'d>(
