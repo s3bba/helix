@@ -404,6 +404,21 @@ pub fn symbol_picker(cx: &mut Context) {
                 Err(err) => log::error!("Error requesting document symbols: {err}"),
             }
         }
+
+        let mut variables = Vec::new();
+        let mut others = Vec::new();
+
+        for item in symbols {
+            if item.symbol.kind == lsp::SymbolKind::VARIABLE {
+                variables.push(item);
+            } else {
+                others.push(item);
+            }
+        }
+
+        variables.extend(others);
+        symbols = variables;
+
         let call = move |_editor: &mut Editor, compositor: &mut Compositor| {
             let columns = [
                 ui::PickerColumn::new("kind", |item: &SymbolInformationItem, _| {
