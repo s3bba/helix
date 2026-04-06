@@ -10,7 +10,7 @@ use helix_event::{dispatch, register_hook, send_blocking};
 use helix_view::editor::Config;
 use helix_view::events::ConfigDidChange;
 use helix_view::handlers::{AutoReloadEvent, Handlers};
-use helix_view::{DocumentId, Editor};
+use helix_view::{DocumentId, Editor, ViewId};
 use tokio::time::Instant;
 
 use crate::compositor::Compositor;
@@ -153,6 +153,7 @@ fn handle_document_change(
     doc_id: DocumentId,
     prompt_if_modified: bool,
 ) {
+    let reload_view_id = reload_view_id(editor, doc_id);
     let scrolloff = editor.config().scrolloff;
 
     let doc = doc_mut!(editor, &doc_id);
@@ -185,7 +186,8 @@ fn handle_document_change(
             editor.set_warning(msg);
         }
     } else {
-        let view = view_mut!(editor);
+        doc.ensure_view_init(reload_view_id);
+        let view = view_mut!(editor, reload_view_id);
         match doc.reload(view, &editor.diff_providers) {
             Ok(_) => {
                 view.ensure_cursor_in_view(doc, scrolloff);
@@ -205,6 +207,27 @@ fn handle_document_change(
             }
         }
     }
+}
+
+fn reload_view_id(editor: &Editor, doc_id: DocumentId) -> ViewId {
+    if editor
+        .tree
+        .try_get(editor.tree.focus)
+        .is_some_and(|view| view.doc == doc_id)
+    {
+        return editor.tree.focus;
+    }
+
+    editor
+        .documents
+        .get(&doc_id)
+        .and_then(|doc| {
+            doc.selections()
+                .keys()
+                .copied()
+                .find(|view_id| editor.tree.contains(*view_id))
+        })
+        .unwrap_or(editor.tree.focus)
 }
 
 /// Reload VCS diffs for all documents
@@ -233,8 +256,10 @@ fn prompt_reload_modified(compositor: &mut Compositor, doc_id: DocumentId, path_
             match event {
                 PromptEvent::Validate => {
                     let scrolloff = cx.editor.config().scrolloff;
+                    let reload_view_id = reload_view_id(cx.editor, doc_id);
                     let doc = doc_mut!(cx.editor, &doc_id);
-                    let view = view_mut!(cx.editor);
+                    doc.ensure_view_init(reload_view_id);
+                    let view = view_mut!(cx.editor, reload_view_id);
                     match doc.reload(view, &cx.editor.diff_providers) {
                         Ok(_) => {
                             view.ensure_cursor_in_view(doc, scrolloff);
