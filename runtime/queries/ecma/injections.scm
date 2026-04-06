@@ -22,66 +22,71 @@
  (#eq? @_template_function_name "$")
  (#set! injection.language "bash"))
 
+; disabled for editor perf
 ; GraphQL detection generally matches the rules provided by the 'GraphQL: Syntax Highlighting'
 ; VSCode extension: https://github.com/graphql/graphiql/blob/8f25b38f4ab14dc99c046109f255fb283bccde52/packages/vscode-graphql-syntax/grammars/graphql.js.json
 
 ; Parse the contents of 'gql' and 'graphql' template literals and function calls
-(
-  (call_expression
-    function: (identifier) @_template_function_name
-    arguments: [
-      ; Tagged template literal: NAME``
-      (template_string (string_fragment) @injection.content)
-      (
-        arguments . [
-          ; Function call containing a string literal: NAME('')
-          (string (string_fragment) @injection.content)
-          ; Function call containing a template literal: NAME(``)
-          (template_string (string_fragment) @injection.content)
-        ]
-      )
-    ]
-  )
-  (#any-of? @_template_function_name "gql" "graphql")
-  (#set! injection.language "graphql")
-)
+; (
+;   (call_expression
+;     function: (identifier) @_template_function_name
+;     arguments: [
+;       ; Tagged template literal: NAME``
+;       (template_string (string_fragment) @injection.content)
+;       (
+;         arguments . [
+;           ; Function call containing a string literal: NAME('')
+;           (string (string_fragment) @injection.content)
+;           ; Function call containing a template literal: NAME(``)
+;           (template_string (string_fragment) @injection.content)
+;         ]
+;       )
+;     ]
+;   )
+;   (#any-of? @_template_function_name "gql" "graphql")
+;   (#set! injection.language "graphql")
+; )
 
+; disabled for editor perf
 ; Parse the contents of strings and tagged template literals that begin with a GraphQL comment '#graphql'
-(
-  [
-    (string (string_fragment) @injection.content)
-    (template_string (string_fragment) @injection.content)
-  ]
-  (#match? @injection.content "^\\s*#graphql")
-  (#set! injection.language "graphql")
-)
+; (
+;   [
+;     (string (string_fragment) @injection.content)
+;     (template_string (string_fragment) @injection.content)
+;   ]
+;   (#match? @injection.content "^\\s*#graphql")
+;   (#set! injection.language "graphql")
+; )
 
+; disabled for editor perf
 ; Parse the contents of strings and tagged template literals with leading ECMAScript comments '/* GraphQL */'
-(
-  ((comment) @_ecma_comment [
-    (string (string_fragment) @injection.content)
-    (template_string (string_fragment) @injection.content)
-  ])
-  (#eq? @_ecma_comment "/* GraphQL */")
-  (#set! injection.language "graphql")
-)
+; (
+;   ((comment) @_ecma_comment [
+;     (string (string_fragment) @injection.content)
+;     (template_string (string_fragment) @injection.content)
+;   ])
+;   (#eq? @_ecma_comment "/* GraphQL */")
+;   (#set! injection.language "graphql")
+; )
 
 ; Parse regex syntax within regex literals
 
 ((regex_pattern) @injection.content
  (#set! injection.language "regex"))
 
+; disabled for editor perf
 ; Parse JSDoc annotations in multiline comments
 
-((comment) @injection.content
- (#set! injection.language "jsdoc")
- (#match? @injection.content "^/\\*+"))
+; ((comment) @injection.content
+;  (#set! injection.language "jsdoc")
+;  (#match? @injection.content "^/\\*+"))
 
 ; Parse general tags in single line comments
 
-((comment) @injection.content
- (#set! injection.language "comment")
- (#match? @injection.content "^//"))
+; disabled for editor perf
+; ((comment) @injection.content
+;  (#set! injection.language "comment")
+;  (#match? @injection.content "^//"))
 
 ; Match string literals passed to standard browser API methods that expects a
 ; css selector as argument.
